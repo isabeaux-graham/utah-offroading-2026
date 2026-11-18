@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Utah 2026</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet">
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.7.0/mapbox-gl.css" rel="stylesheet">
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.7.0/mapbox-gl.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/suncalc@1.9.0/suncalc.js"></script>
+<style>
+  :root{
+    --sidew:380px; --sideh:46vh;
+    --sidemin:360px;   /* narrowest the side panel can get before content would clip */
+    --ink:#18202c; --muted:#5d6879; --sun:#d9821a;
+    --serif:"Playfair Display",Georgia,"Times New Roman",serif;
+    --sans:"DM Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    --glass:rgba(255,255,255,.52);
+    --glass-edge:rgba(255,255,255,.7);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:#dfe3e8;color:var(--ink);font:15px/1.4 var(--sans)}
+  #app{position:fixed;inset:0}
+  #map{position:absolute;inset:0}
+
+  /* ---------- liquid glass ---------- */
+  .glass{
+    background:var(--glass);
+    -webkit-backdrop-filter:blur(24px) saturate(180%);backdrop-filter:blur(24px) saturate(180%);
+    border:1px solid var(--glass-edge);
+    border-radius:22px;
+    box-shadow:0 10px 34px rgba(30,40,64,.18), inset 0 1px 0 rgba(255,255,255,.85), inset 0 -1px 0 rgba(255,255,255,.25);
+  }
+
+  /* ---------- side stack ---------- */
+  #side{position:absolute;left:12px;top:12px;bottom:12px;width:max(var(--sidew),var(--sidemin));z-index:3;
+    display:flex;flex-direction:column;gap:10px;min-height:0}
+  .titlecard{padding:16px 20px 15px}
+  .titlecard h1{margin:0;font-family:var(--serif);font-weight:600;font-size:24px;line-height:1.1;
+    letter-spacing:.14em;text-transform:uppercase}
+  .titlecard p{margin:7px 0 0;font-size:11px;font-weight:600;letter-spacing:.2em;text-transform:uppercase;color:var(--muted)}
+  .body{flex:1;display:flex;flex-direction:column;gap:10px;min-height:0}
+
+  #daybar{display:flex;flex-direction:row;gap:6px;padding:8px;flex:0 0 auto;overflow-x:auto;scrollbar-width:none}
+  #daybar::-webkit-scrollbar{display:none}
+  .daybtn{flex:1 1 0;min-width:44px;height:52px;border-radius:10px;cursor:pointer;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;
+    border:1px solid rgba(255,255,255,.8);background:rgba(255,255,255,.4);color:var(--ink);
+    box-shadow:inset 0 -3px 0 var(--c1,#888);font-family:var(--sans);padding:0;
+    transition:transform .12s ease,background .12s ease}
+  .daybtn small{font-size:9px;font-weight:700;letter-spacing:.16em;opacity:.7}
+  .daybtn b{font-size:20px;font-weight:700;line-height:1.05}
+  .daybtn.all b{font-size:14px;letter-spacing:.1em}
+  .daybtn:active{transform:scale(.96)}
+  .daybtn.active{background:linear-gradient(160deg,var(--c0),var(--c1));color:#fff;border-color:transparent;
+    box-shadow:0 4px 12px rgba(30,60,160,.35)}
+  .daybtn.active small{opacity:.85}
+
+  #info{flex:1;min-width:0;overflow-y:auto;padding:0 2px 6px 0;display:flex;flex-direction:column;gap:10px;
+    scrollbar-width:none}
+  #info::-webkit-scrollbar{display:none}
+  .card{padding:14px 16px;flex:0 0 auto}
+  .eyebrow{font-size:11px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin:0 0 10px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .stat{background:rgba(255,255,255,.45);border:1px solid rgba(255,255,255,.7);border-radius:14px;padding:9px 12px;text-align:center}
+  .stat.wide{grid-column:1/-1}
+  .g3{grid-template-columns:repeat(3,1fr);margin-bottom:8px}
+  .g3 .stat{padding:9px 4px}
+  .g3 .stat b{font-size:16px}
+  .g3 .stat span{letter-spacing:.05em}
+  .stat span{display:flex;align-items:center;justify-content:center;gap:4px;color:var(--muted);font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.1em}
+  .stat b{display:block;font-size:19px;font-weight:700;font-variant-numeric:tabular-nums;margin-top:1px;white-space:nowrap}
+  .chev{width:10px;height:10px;flex:0 0 auto;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+  .sunrow{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .sunrow .stat{flex:1 1 auto;display:flex;align-items:center;justify-content:center;gap:6px;padding:9px 6px}
+  .sunrow svg{width:23px;height:23px;flex:0 0 auto;color:var(--sun)}
+  .sunrow b{font-size:14px;margin:0;white-space:nowrap}
+  canvas#prof{width:100%;height:140px;display:block;touch-action:pan-y}
+  #readout{color:var(--muted);font-size:12.5px;height:18px;margin-top:6px}
+
+  .daysbox{container-type:inline-size}
+  .days{display:flex;flex-wrap:wrap;justify-content:center;gap:8px}
+  .row{position:relative;display:flex;flex-direction:column;align-items:center;text-align:center;gap:3px;min-width:0;
+    flex:0 0 calc((100% - 16px) / 3);
+    padding:10px 6px;cursor:pointer;border:0;border-radius:14px;background:rgba(255,255,255,.4)}
+  @container (min-width:500px){.row{flex-basis:calc((100% - 32px) / 5)}}
+  .row::before{content:"";position:absolute;inset:0;border-radius:inherit;padding:2px;pointer-events:none;
+    background:linear-gradient(135deg,var(--c0),var(--c1));
+    -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+    -webkit-mask-composite:xor;mask-composite:exclude}
+  .row .date{font-weight:700;font-size:15px;white-space:nowrap;margin-bottom:3px;color:var(--ink)}
+  .row .m{font-size:12px;font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--muted)}
+  .row .c{display:flex;align-items:center;justify-content:center;gap:4px;font-size:12px;font-weight:500;color:var(--muted);
+    font-variant-numeric:tabular-nums;white-space:nowrap}
+
+  .wp{padding:9px 0;border-bottom:1px solid rgba(24,32,44,.1);cursor:pointer}
+  .wp:last-child{border-bottom:0}
+  .wp small{color:var(--muted);display:block}
+  a.dl{display:block;text-align:center;color:var(--ink);font-weight:700;text-decoration:none;
+    padding:13px;border-radius:16px;flex:0 0 auto;letter-spacing:.04em}
+
+  /* ---------- resize handle ---------- */
+  #resizer{position:absolute;top:0;bottom:0;right:-15px;width:18px;cursor:ew-resize;touch-action:none;z-index:4}
+  #resizer::after{content:"";position:absolute;left:6px;top:50%;width:5px;height:64px;margin-top:-32px;border-radius:3px;
+    background:rgba(255,255,255,.85);box-shadow:0 1px 6px rgba(30,40,64,.3)}
+
+  /* ---------- map controls ---------- */
+  .mapctl{position:absolute;top:12px;left:calc(max(var(--sidew),var(--sidemin)) + 36px);z-index:2;display:flex;gap:8px;align-items:center}
+  .seg{display:flex;padding:3px;gap:3px;border-radius:14px}
+  .seg button,.mapctl .tog{font:600 13px var(--sans);color:var(--ink);background:transparent;border:0;
+    border-radius:11px;padding:8px 13px;min-height:36px;cursor:pointer}
+  .seg button.on{background:rgba(255,255,255,.9);box-shadow:0 1px 4px rgba(30,40,64,.2)}
+  .mapctl .tog{border-radius:14px;padding:0 16px;min-height:44px}
+  .mapctl .tog.on{background:var(--ink);color:#fff}
+  #err{display:none;position:absolute;z-index:5;left:50%;transform:translateX(-50%);bottom:12px;max-width:80vw;
+    background:#7a2222;color:#fff;padding:10px 12px;border-radius:10px;font-size:13px}
+  .startdot{width:13px;height:13px;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,.45)}
+  .wpdot{width:14px;height:14px;border-radius:50%;background:#fff;border:3px solid var(--c);
+    box-shadow:0 1px 4px rgba(0,0,0,.6)}
+  .scrub{width:14px;height:14px;border-radius:50%;background:#fff;border:3px solid #111;box-shadow:0 0 0 2px #fff}
+  .mapboxgl-popup-content{color:#111;font:14px var(--sans);border-radius:12px}
+
+  @media (max-width:760px){
+    #side{left:8px;right:8px;top:auto;bottom:8px;width:auto;height:var(--sideh)}
+    .titlecard{padding:10px 16px}
+    .titlecard h1{font-size:18px}
+    .titlecard p{margin-top:4px;font-size:10px}
+    .mapctl{left:10px;top:10px}
+    #resizer{top:-16px;bottom:auto;left:0;right:0;width:auto;height:22px;cursor:ns-resize}
+    #resizer::after{left:50%;top:7px;width:64px;height:5px;margin:0 0 0 -32px}
+    .daybtn{height:44px}
+    .daybtn b{font-size:16px}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <main id="map">
+    <div id="err"></div>
+  </main>
+  <div class="mapctl">
+    <div class="seg glass" id="basemap" role="group" aria-label="Basemap"></div>
+    <button class="tog glass" id="btn3d">3D</button>
+  </div>
+  <aside id="side">
+    <div class="titlecard glass">
+      <h1 id="title"></h1>
+      <p id="subtitle"></p>
+    </div>
+    <div class="body">
+      <div id="daybar" class="glass"></div>
+      <div id="info"></div>
+    </div>
+    <div id="resizer" title="Drag to resize"></div>
+  </aside>
+</div>
+
+<script>
+/* ============================ CONFIG ============================ */
+const MAPBOX_TOKEN = 'pk.eyJ1IjoiaXNhYmVhdXgiLCJhIjoiY212MndjMnNqMDFkYTJ4cHFmNmk5aGQxZiJ9.-yg6zdYZr4jaZjfONeWtmA';
+
+const TRIP_TITLE    = 'UTAH OFF ROADING 2026';
+const TRIP_SUBTITLE = '';
+const TRIP_START    = '2026-11-20';          // date of Day 1 (YYYY-MM-DD) - used for sunrise/sunset
+const TRIP_TIMEZONE = 'America/Denver';      // Utah (Mountain time)
+
+// Diameter (px) of the dot at the start of each day's route
+const START_DOT_SIZE = 10;
+
+// Route colours: one continuous blue ramp. Each day is a gradient from RAMP[i] to RAMP[i+1].
+const RAMP = ['#baadd8','#8d79bd','#7c67af','#6a5799','#5a4888','#4d3d74'];
+
+// Line thickness: 1 = default, 0.7 = thinner, 1.5 = thicker (arrows scale with it)
+const LINE_SCALE = 1.7;
+
+// Edit file names / labels here
+const DAYS = [
+  { file: 'Day_1120.gpx', label: 'Day 1' },
+  { file: 'Day_1121.gpx', label: 'Day 2' },
+  { file: 'Day_1122.gpx', label: 'Day 3' },
+  { file: 'Day_1123.gpx', label: 'Day 4' },
+  { file: 'Day_1124.gpx', label: 'Day 5' },
+];
+
+// Route colours used when the Satellite basemap is showing.
+// Electric cyan -> blue: the opposite of Utah's orange/tan sandstone, so it pops.
+const SAT_RAMP = ['#6ff0ff', '#8e79c0', '#00c8ff', '#00aaff', '#0b85ff', '#3a5bff'];
+
+const BASEMAPS = [
+  { name: 'Terrain',   style: 'mapbox://styles/mapbox/outdoors-v12', terrain: true },
+  { name: 'Satellite', style: 'mapbox://styles/mapbox/satellite-streets-v12', ramp: SAT_RAMP },
+];
+/* ================================================================ */
+
+const M2MI = 1 / 1609.344, M2FT = 3.28084;
+const root = document.documentElement;
+let map, selected = 'all', terrain3d = false, baseIdx = 0;
+let markers = [], scrubMarker = null;
+const days = [];
+
+document.getElementById('title').textContent = TRIP_TITLE;
+document.getElementById('subtitle').textContent = TRIP_SUBTITLE;
+
+/* ---------- GPX parsing & stats ---------- */
+function haversine(a, b) {
+  const R = 6371000, r = Math.PI / 180;
+  const dLat = (b[1] - a[1]) * r, dLon = (b[0] - a[0]) * r;
+  const h = Math.sin(dLat / 2) ** 2 +
+            Math.cos(a[1] * r) * Math.cos(b[1] * r) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+function parseGPX(text) {
+  const doc = new DOMParser().parseFromString(text, 'application/xml');
+  if (doc.querySelector('parsererror')) throw new Error('Invalid GPX');
+  let pts = [...doc.getElementsByTagName('trkpt')];
+  if (!pts.length) pts = [...doc.getElementsByTagName('rtept')];
+  const coords = pts.map(p => {
+    const e = p.getElementsByTagName('ele')[0];
+    return [parseFloat(p.getAttribute('lon')), parseFloat(p.getAttribute('lat')),
+            e ? parseFloat(e.textContent) : null];
+  }).filter(c => isFinite(c[0]) && isFinite(c[1]));
+  const waypoints = [...doc.getElementsByTagName('wpt')].map(w => {
+    const g = t => { const n = w.getElementsByTagName(t)[0]; return n ? n.textContent.trim() : ''; };
+    return { lng: parseFloat(w.getAttribute('lon')), lat: parseFloat(w.getAttribute('lat')),
+             name: g('name'), desc: g('desc') || g('cmt') };
+  }).filter(w => isFinite(w.lng) && isFinite(w.lat));
+  return { coords, waypoints };
+}
+
+function computeStats(coords) {
+  const dist = [0];
+  for (let i = 1; i < coords.length; i++) dist.push(dist[i - 1] + haversine(coords[i - 1], coords[i]));
+  const hasEle = coords.some(c => c[2] != null);
+  let gain = 0, loss = 0, min = null, max = null, ele = [];
+  if (hasEle) {
+    const raw = coords.map(c => c[2] ?? 0);
+    ele = raw.map((_, i) => {            // light smoothing
+      let s = 0, n = 0;
+      for (let j = Math.max(0, i - 2); j <= Math.min(raw.length - 1, i + 2); j++) { s += raw[j]; n++; }
+      return s / n;
+    });
+    let ref = ele[0];
+    for (const e of ele) {               // 3 m hysteresis
+      if (e - ref >= 3) { gain += e - ref; ref = e; }
+      else if (ref - e >= 3) { loss += ref - e; ref = e; }
+    }
+    min = Math.min(...ele); max = Math.max(...ele);
+  }
+  return { dist, total: dist[dist.length - 1], ele, hasEle, gain, loss, min, max };
+}
+
+/* ---------- Formatting helpers ---------- */
+const fmtMi = m => (m * M2MI).toFixed(1) + ' mi';
+const fmtFt = m => Math.round(m * M2FT).toLocaleString() + ' ft';
+function dayDate(i) {
+  const [y, m, d] = TRIP_START.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d + i, 19, 0, 0)); // ~midday in the Americas
+}
+const fmtTime = d => d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: TRIP_TIMEZONE });
+const fmtDate = d => d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: TRIP_TIMEZONE });
+function sunFor(i) {
+  const c = days[i].coords[0];
+  const t = SunCalc.getTimes(dayDate(i), c[1], c[0]);
+  const hrs = (t.sunset - t.sunrise) / 3600000;
+  return { rise: fmtTime(t.sunrise), set: fmtTime(t.sunset), daylight: `${Math.floor(hrs)}h ${Math.round((hrs % 1) * 60)}m` };
+}
+const hex2rgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+const rgb2hex = a => '#' + a.map(v => Math.round(v).toString(16).padStart(2, '0')).join('');
+const mix = (a, b, t) => { const A = hex2rgb(a), B = hex2rgb(b); return rgb2hex(A.map((v, i) => v + (B[i] - v) * t)); };
+function bearing(a, b) {
+  const r = Math.PI / 180, dl = (b[0] - a[0]) * r;
+  const y = Math.sin(dl) * Math.cos(b[1] * r);
+  const x = Math.cos(a[1] * r) * Math.sin(b[1] * r) - Math.sin(a[1] * r) * Math.cos(b[1] * r) * Math.cos(dl);
+  return (Math.atan2(y, x) / r + 360) % 360;
+}
+function arrowPoints(d, fracs = [0.25, 0.5, 0.75]) {
+  const { dist, total } = d.stats;
+  return { type: 'FeatureCollection', features: fracs.map(f => {
+    const target = f * total;
+    let lo = 1, hi = dist.length - 1;
+    while (lo < hi) { const mid = (lo + hi) >> 1; dist[mid] < target ? lo = mid + 1 : hi = mid; }
+    const a = d.coords[Math.max(0, lo - 3)], b = d.coords[Math.min(d.coords.length - 1, lo + 3)];
+    return { type: 'Feature', properties: { bearing: bearing(a, b) },
+             geometry: { type: 'Point', coordinates: d.coords[lo].slice(0, 2) } };
+  }) };
+}
+// Open ">" chevron (outlined, not filled), pointing east
+function chevronImage() {
+  const s = 48, c = document.createElement('canvas'); c.width = c.height = s;
+  const x = c.getContext('2d'); x.lineCap = 'round'; x.lineJoin = 'round';
+  const path = () => { x.beginPath(); x.moveTo(15, 9); x.lineTo(33, 24); x.lineTo(15, 39); };
+  x.strokeStyle = 'rgba(0,0,0,.75)'; x.lineWidth = 11; path(); x.stroke();
+  x.strokeStyle = '#fff'; x.lineWidth = 6; path(); x.stroke();
+  return x.getImageData(0, 0, s, s);
+}
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+/* ---------- Climb / descent chevrons ---------- */
+const CHEV_UP   = '<svg class="chev" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 8l4-4 4 4"/></svg>';
+const CHEV_DOWN = '<svg class="chev" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4"/></svg>';
+
+/* ---------- Favicon: about 3/5 of an off-road tire, cropped by the tile edges ---------- */
+(function () {
+  const bg = '#4d3d74';
+  const svgSrc = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+      <clipPath id="c"><rect width="64" height="64" rx="14"/></clipPath>
+      <rect width="64" height="64" rx="14" fill="${bg}"/>
+      <g clip-path="url(#c)">
+        <g transform="translate(5 32)">
+          <circle r="34" fill="#fff"/>
+          <circle r="30.5" fill="none" stroke="${bg}" stroke-width="5" stroke-dasharray="8 8.23"/>
+          <circle r="23" fill="${bg}"/>
+          <circle r="16" fill="#fff"/>
+          <circle r="5.5" fill="${bg}"/>
+          <g fill="${bg}">
+            <circle cx="10.5" cy="0" r="1.9"/><circle cx="3.2" cy="10" r="1.9"/><circle cx="-8.5" cy="6.2" r="1.9"/>
+            <circle cx="-8.5" cy="-6.2" r="1.9"/><circle cx="3.2" cy="-10" r="1.9"/>
+          </g>
+        </g>
+      </g>
+    </svg>`;
+  const link = rel => { let l = document.querySelector(`link[rel="${rel}"]`);
+    if (!l) { l = document.createElement('link'); l.rel = rel; document.head.appendChild(l); } return l; };
+  const icon = link('icon');
+  icon.type = 'image/svg+xml';
+  icon.href = 'data:image/svg+xml,' + encodeURIComponent(svgSrc);
+  try {   // PNG copy for Safari / iOS home-screen icon
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement('canvas'); c.width = c.height = 180;
+      c.getContext('2d').drawImage(img, 0, 0, 180, 180);
+      const png = c.toDataURL('image/png');
+      icon.type = 'image/png'; icon.href = png;
+      link('apple-touch-icon').href = png;
+    };
+    img.src = icon.href;
+  } catch (e) {}
+})();
+
+/* ---------- Sun icons (stroke, inherit colour) ---------- */
+const svg = inner => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`;
+const HORIZON = '<path d="M7 17a5 5 0 0 1 10 0"/><path d="M3 20.5h18"/><path d="M4.6 12.6l1.3 1.3M19.4 12.6l-1.3 1.3M2.5 17H4.5M19.5 17h2"/>';
+const ICON = {
+  rise: svg(HORIZON + '<path d="M12 8.5V2.5M9.6 5L12 2.5 14.4 5"/>'),
+  set:  svg(HORIZON + '<path d="M12 2.5V8.5M9.6 6L12 8.5 14.4 6"/>'),
+  day:  svg('<circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.6M12 18.9v2.6M2.5 12h2.6M18.9 12h2.6M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/>'),
+};
+
+/* ---------- Route colours (depend on the active basemap) ---------- */
+const curRamp = () => BASEMAPS[baseIdx].ramp || RAMP;
+function rampColors(i) {
+  const R = curRamp(), c0 = R[i % (R.length - 1)], c1 = R[(i % (R.length - 1)) + 1];
+  return { c0, c1, color: mix(c0, c1, 0.5) };
+}
+const applyRamp = () => days.forEach(d => Object.assign(d, rampColors(d.idx)));
+
+/* ---------- Load data ---------- */
+async function loadDays() {
+  const errs = [];
+  for (let i = 0; i < DAYS.length; i++) {
+    const cfg = DAYS[i];
+    try {
+      const res = await fetch(cfg.file);
+      if (!res.ok) throw new Error(res.status + ' ' + res.statusText);
+      const g = parseGPX(await res.text());
+      if (g.coords.length < 2) throw new Error('no track points');
+      const stats = computeStats(g.coords);
+      const d = { ...cfg, idx: i, id: 'day' + i, ...rampColors(i),
+        coords: g.coords, waypoints: g.waypoints, stats,
+        geojson: { type: 'Feature', geometry: { type: 'LineString', coordinates: g.coords.map(c => [c[0], c[1]]) } } };
+      d.arrows = arrowPoints(d);
+      days.push(d);
+    } catch (e) {
+      errs.push(`${cfg.file}: ${e.message}`);
+    }
+  }
+  if (errs.length) {
+    const el = document.getElementById('err');
+    el.style.display = 'block';
+    el.innerHTML = 'Could not load: ' + esc(errs.join('; ')) +
+      '<br>Open this page through a local server (see instructions), not by double-clicking the file.';
+  }
+}
+
+/* ---------- Map ---------- */
+function set3D(on) {
+  terrain3d = on;
+  document.getElementById('btn3d').classList.toggle('on', on);
+  applyTerrain();
+}
+
+function initMap() {
+  mapboxgl.accessToken = MAPBOX_TOKEN;
+  const seg = document.getElementById('basemap');
+  BASEMAPS.forEach((b, i) => {
+    const btn = document.createElement('button');
+    btn.textContent = b.name; btn.dataset.i = i; btn.classList.toggle('on', i === baseIdx);
+    btn.onclick = () => {
+      baseIdx = i;
+      seg.querySelectorAll('button').forEach(x => x.classList.toggle('on', +x.dataset.i === i));
+      applyRamp(); buildDayBar(); addMarkers(); renderInfo();   // recolour UI to match the new ramp
+      map.setStyle(BASEMAPS[i].style);
+    };
+    seg.appendChild(btn);
+  });
+
+  map = new mapboxgl.Map({
+    container: 'map',
+    style: BASEMAPS[0].style,
+    center: days[0].coords[0].slice(0, 2),
+    zoom: 9,
+    hash: false,
+    touchPitch: true,
+    maxPitch: 80,
+  });
+  map.addControl(new mapboxgl.NavigationControl({ visualizePitch: true }), 'top-right');
+  map.addControl(new mapboxgl.GeolocateControl({
+    positionOptions: { enableHighAccuracy: true }, trackUserLocation: true, showUserHeading: true
+  }), 'top-right');
+  map.addControl(new mapboxgl.ScaleControl({ unit: 'imperial' }), 'bottom-right');
+
+  map.on('style.load', () => { addTerrainSource(); styleTerrainBasemap(); addRoutes(); });
+
+  // Tilting with two fingers (or right-drag) switches to 3D automatically
+  map.on('pitchstart', e => { if (e.originalEvent && !terrain3d) set3D(true); });
+  map.on('pitchend', e => { if (e.originalEvent && terrain3d && map.getPitch() < 2) set3D(false); });
+
+  document.getElementById('btn3d').addEventListener('click', () => {
+    set3D(!terrain3d);
+    map.easeTo({ pitch: terrain3d ? 65 : 0, duration: 800 });
+  });
+  map.once('load', () => select('all'));
+}
+
+function addTerrainSource() {
+  if (!map.getSource('mapbox-dem')) {
+    map.addSource('mapbox-dem', { type: 'raster-dem', url: 'mapbox://mapbox.mapbox-terrain-dem-v1',
+      tileSize: 512, maxzoom: 14 });
+  }
+  applyTerrain();
+}
+function applyTerrain() {
+  map.setTerrain(terrain3d ? { source: 'mapbox-dem', exaggeration: 1.3 } : null);
+}
+
+// Approximates the Google Maps "Terrain" look: warm beige land, soft green
+// vegetation, light blue water and shaded relief.
+function styleTerrainBasemap() {
+  if (!BASEMAPS[baseIdx].terrain) return;
+  const set = (id, prop, val) => { try { if (map.getLayer(id)) map.setPaintProperty(id, prop, val); } catch (e) {} };
+  set('land', 'background-color', '#ebe7da');
+  set('landcover', 'fill-color', '#d3e1bc');
+  set('national-park', 'fill-color', '#c9ddb3');
+  set('landuse', 'fill-color', '#dfe6cc');
+  set('water', 'fill-color', '#a9c9ec');
+  set('hillshade', 'fill-opacity', 0.35);
+  set('contour-line', 'line-color', '#b8a98c');
+  set('contour-line', 'line-opacity', 0.45);
+  if (!map.getLayer('relief')) {
+    const before = ['waterway', 'water', 'land-structure-polygon', 'road-minor'].find(id => map.getLayer(id));
+    map.addLayer({ id: 'relief', type: 'hillshade', source: 'mapbox-dem',
+      paint: { 'hillshade-exaggeration': 0.7, 'hillshade-shadow-color': '#6b5a45',
+               'hillshade-highlight-color': '#fffdf5', 'hillshade-accent-color': '#8a7a62',
+               'hillshade-illumination-direction': 315 } }, before);
+  }
+}
+
+// Line width and arrow size both scale with zoom so they stay in proportion
+const zoomScale = stops => ['interpolate', ['linear'], ['zoom'], ...stops.map(([z, v]) => [z, v * LINE_SCALE]).flat()];
+const LINE_W   = zoomScale([[6, 1.2], [10, 2], [13, 3], [16, 4.5], [18, 7]]);
+const CASING_W = zoomScale([[6, 3], [10, 4], [13, 5.5], [16, 8], [18, 12]]);
+const ARROW_S  = zoomScale([[6, 0.3], [10, 0.42], [13, 0.62], [16, 0.95], [18, 1.4]]);
+
+function addRoutes() {
+  if (!map.hasImage('chevron')) map.addImage('chevron', chevronImage(), { pixelRatio: 2 });
+  days.forEach(d => {
+    if (!map.getSource(d.id)) map.addSource(d.id, { type: 'geojson', data: d.geojson, lineMetrics: true });
+    if (!map.getSource(d.id + '-arrows')) map.addSource(d.id + '-arrows', { type: 'geojson', data: d.arrows });
+    map.addLayer({ id: d.id + '-casing', type: 'line', source: d.id,
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': '#fff', 'line-width': CASING_W, 'line-opacity': 0.8 } });
+    map.addLayer({ id: d.id + '-line', type: 'line', source: d.id,
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-gradient': ['interpolate', ['linear'], ['line-progress'], 0, d.c0, 1, d.c1],
+               'line-width': LINE_W, 'line-opacity': 1 } });
+    map.addLayer({ id: d.id + '-arrows', type: 'symbol', source: d.id + '-arrows',
+      layout: { 'icon-image': 'chevron', 'icon-size': ARROW_S, 'icon-rotate': ['-', ['get', 'bearing'], 90],
+                'icon-rotation-alignment': 'map', 'icon-pitch-alignment': 'map',
+                'icon-allow-overlap': true, 'icon-ignore-placement': true } });
+  });
+  applyDim();
+}
+
+function applyDim() {
+  days.forEach(d => {
+    const on = selected === 'all' || selected === d.idx;
+    if (map.getLayer(d.id + '-line')) {
+      map.setPaintProperty(d.id + '-line', 'line-opacity', on ? 1 : 0.2);
+      map.setPaintProperty(d.id + '-casing', 'line-opacity', on ? 0.8 : 0.1);
+      map.setPaintProperty(d.id + '-arrows', 'icon-opacity', on ? 1 : 0.15);
+    }
+  });
+}
+
+function clearMarkers() { markers.forEach(m => m.remove()); markers = []; }
+
+function addMarkers() {
+  clearMarkers();
+  days.forEach(d => {
+    if (!(selected === 'all' || selected === d.idx)) return;
+    const first = d.coords[0];
+    const s = document.createElement('div');
+    s.className = 'startdot'; s.style.background = d.c0;
+    // white outline matches the white edge around the route lines
+    const ow = 1.25 * LINE_SCALE;
+    s.style.width = s.style.height = (START_DOT_SIZE + 2 * ow) + 'px';
+    s.style.border = `${ow}px solid rgba(255,255,255,.8)`;
+    s.style.backgroundClip = 'padding-box';
+    markers.push(new mapboxgl.Marker({ element: s }).setLngLat(first.slice(0, 2))
+      .setPopup(new mapboxgl.Popup({ offset: 12 }).setHTML(`<b>${esc(d.label)} start</b>`)).addTo(map));
+    if (selected === d.idx) {
+      d.waypoints.forEach(w => {
+        const el = document.createElement('div');
+        el.className = 'wpdot'; el.style.setProperty('--c', d.color);
+        markers.push(new mapboxgl.Marker({ element: el }).setLngLat([w.lng, w.lat])
+          .setPopup(new mapboxgl.Popup({ offset: 12 })
+            .setHTML(`<b>${esc(w.name || 'Waypoint')}</b>${w.desc ? '<br>' + esc(w.desc) : ''}`)).addTo(map));
+      });
+    }
+  });
+}
+
+function fitTo(sel) {
+  const b = new mapboxgl.LngLatBounds();
+  days.forEach(d => { if (sel === 'all' || sel === d.idx) d.coords.forEach(c => b.extend([c[0], c[1]])); });
+  const r = document.getElementById('side').getBoundingClientRect();
+  const small = window.innerWidth <= 760;
+  const padding = small ? { top: 70, left: 30, right: 30, bottom: r.height + 40 }
+                        : { top: 70, bottom: 50, right: 70, left: r.right + 40 };
+  map.fitBounds(b, { padding, duration: 900, pitch: terrain3d ? 65 : 0 });
+}
+
+/* ---------- UI ---------- */
+function buildDayBar() {
+  const bar = document.getElementById('daybar');
+  bar.innerHTML = '';
+  const R = curRamp();
+  const mk =(small, big, val, c0, c1, cls) => {
+    const b = document.createElement('button');
+    b.className = 'daybtn ' + (cls || ''); b.dataset.val = val;
+    b.innerHTML = (small ? `<small>${small}</small>` : '') + `<b>${big}</b>`;
+    b.style.setProperty('--c0', c0); b.style.setProperty('--c1', c1);
+    b.setAttribute('aria-label', val === 'all' ? 'All days' : 'Day ' + big);
+    b.onclick = () => select(val);
+    b.classList.toggle('active', String(val) === String(selected));
+    bar.appendChild(b);
+  };
+  mk('', 'ALL', 'all', R[0], R[R.length - 1], 'all');
+  days.forEach(d => mk('DAY', d.idx + 1, d.idx, d.c0, d.c1));
+}
+
+function select(val) {
+  selected = val;
+  document.querySelectorAll('.daybtn').forEach(b => {
+    b.classList.toggle('active', String(b.dataset.val) === String(val));
+  });
+  if (scrubMarker) { scrubMarker.remove(); scrubMarker = null; }
+  applyDim(); addMarkers(); renderInfo(); fitTo(val);
+  document.getElementById('info').scrollTop = 0;
+}
+
+const elevCard = `<div class="card glass"><div class="eyebrow">Elevation</div><canvas id="prof"></canvas><div id="readout">Drag across the chart</div></div>`;
+
+function renderInfo() {
+  const el = document.getElementById('info');
+  if (selected === 'all') {
+    const totD = days.reduce((a, d) => a + d.stats.total, 0);
+    const totG = days.reduce((a, d) => a + d.stats.gain, 0);
+    el.innerHTML = `
+      <div class="card glass">
+        <div class="eyebrow">Trip</div>
+        <div class="grid">
+          <div class="stat"><span>Distance</span><b>${fmtMi(totD)}</b></div>
+          <div class="stat"><span>Climb ${CHEV_UP}</span><b>${fmtFt(totG)}</b></div>
+        </div>
+      </div>
+      ${elevCard}
+      <div class="card glass">
+        <div class="daysbox"><div class="days">
+        ${days.map(d => `
+          <div class="row" data-i="${d.idx}" style="--c0:${d.c0};--c1:${d.c1}">
+            <span class="date">${fmtDate(dayDate(d.idx))}</span>
+            <span class="m">${fmtMi(d.stats.total)}</span>
+            <span class="c">${CHEV_UP}${d.stats.hasEle ? fmtFt(d.stats.gain) : '–'}</span>
+          </div>`).join('')}
+        </div></div>
+      </div>`;
+    el.querySelectorAll('.row').forEach(r => r.onclick = () => select(+r.dataset.i));
+    drawProfile(days);
+    return;
+  }
+  const d = days[selected], s = d.stats, sun = sunFor(d.idx);
+  el.innerHTML = `
+    <div class="card glass">
+      <div class="eyebrow">${esc(d.label)} · ${fmtDate(dayDate(d.idx))}</div>
+      <div class="grid g3">
+        <div class="stat"><span>Distance</span><b>${fmtMi(s.total)}</b></div>
+        <div class="stat"><span>Climb ${CHEV_UP}</span><b>${s.hasEle ? fmtFt(s.gain) : '–'}</b></div>
+        <div class="stat"><span>Descent ${CHEV_DOWN}</span><b>${s.hasEle ? fmtFt(s.loss) : '–'}</b></div>
+      </div>
+      <div class="grid">
+        <div class="stat"><span>High</span><b>${s.hasEle ? fmtFt(s.max) : '–'}</b></div>
+        <div class="stat"><span>Low</span><b>${s.hasEle ? fmtFt(s.min) : '–'}</b></div>
+      </div>
+      <div class="sunrow">
+        <div class="stat" title="Sunrise">${ICON.rise}<b>${sun.rise}</b></div>
+        <div class="stat" title="Sunset">${ICON.set}<b>${sun.set}</b></div>
+        <div class="stat" title="Daylight">${ICON.day}<b>${sun.daylight}</b></div>
+      </div>
+    </div>
+    ${s.hasEle ? elevCard : ''}
+    ${d.waypoints.length ? `<div class="card glass"><div class="eyebrow">Waypoints</div>${d.waypoints.map((w, i) =>
+      `<div class="wp" data-w="${i}"><b>${esc(w.name || 'Waypoint ' + (i + 1))}</b>${w.desc ? `<small>${esc(w.desc)}</small>` : ''}</div>`).join('')}</div>` : ''}
+    <a class="dl glass" href="${esc(d.file)}" download>⬇ Download ${esc(d.label)} GPX</a>`;
+  el.querySelectorAll('.wp').forEach(r => r.onclick = () => {
+    const w = d.waypoints[+r.dataset.w];
+    map.flyTo({ center: [w.lng, w.lat], zoom: Math.max(map.getZoom(), 14) });
+  });
+  if (s.hasEle) drawProfile([d]);
+}
+
+// Shared y-axis for every elevation chart (rounded outward to 500 ft)
+function elevRange() {
+  const withEle = days.filter(d => d.stats.hasEle);
+  const lo = Math.min(...withEle.map(d => d.stats.min)) * M2FT;
+  const hi = Math.max(...withEle.map(d => d.stats.max)) * M2FT;
+  const loR = Math.floor(lo / 500) * 500, hiR = Math.ceil(hi / 500) * 500;
+  return { lo: loR / M2FT, hi: Math.max(hiR, loR + 500) / M2FT, loFt: loR, hiFt: Math.max(hiR, loR + 500) };
+}
+
+function drawProfile(list) {
+  const cv = document.getElementById('prof'); if (!cv) return;
+  const dpr = window.devicePixelRatio || 1;
+  const W = cv.clientWidth, H = cv.clientHeight;
+  cv.width = W * dpr; cv.height = H * dpr;
+  const ctx = cv.getContext('2d'); ctx.scale(dpr, dpr);
+  const R = elevRange();
+  const segs = []; let off = 0;
+  list.forEach(d => { segs.push({ d, off }); off += d.stats.total; });
+  const total = off;
+  const pad = { l: 44, r: 6, t: 8, b: 18 };
+  const x = m => pad.l + (m / total) * (W - pad.l - pad.r);
+  const y = e => pad.t + (1 - (e - R.lo) / (R.hi - R.lo)) * (H - pad.t - pad.b);
+
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#5d6879'; ctx.font = '11px "DM Sans", sans-serif'; ctx.strokeStyle = 'rgba(24,32,44,.12)'; ctx.lineWidth = 1;
+  const range = R.hiFt - R.loFt, step = range <= 2000 ? 500 : range <= 5000 ? 1000 : 2000;
+  for (let ft = Math.ceil(R.loFt / step) * step; ft <= R.hiFt; ft += step) {
+    const yy = y(ft / M2FT);
+    ctx.beginPath(); ctx.moveTo(pad.l, yy); ctx.lineTo(W - pad.r, yy); ctx.stroke();
+    ctx.fillText(ft.toLocaleString(), 0, yy + 4);
+  }
+  ctx.fillText('0', pad.l, H - 4);
+  ctx.textAlign = 'right'; ctx.fillText((total * M2MI).toFixed(1) + ' mi', W - pad.r, H - 4); ctx.textAlign = 'left';
+
+  segs.forEach(({ d, off }) => {
+    const { dist, ele, total: t } = d.stats;
+    const x0 = x(off), x1 = x(off + t);
+    const g = ctx.createLinearGradient(x0, 0, x1, 0);
+    g.addColorStop(0, d.c0); g.addColorStop(1, d.c1);
+    const fg = ctx.createLinearGradient(x0, 0, x1, 0);
+    fg.addColorStop(0, d.c0 + '55'); fg.addColorStop(1, d.c1 + '55');
+    const step2 = Math.max(1, Math.floor(ele.length / 600));
+    ctx.beginPath(); ctx.moveTo(x(off), y(R.lo));
+    for (let i = 0; i < ele.length; i += step2) ctx.lineTo(x(off + dist[i]), y(ele[i]));
+    ctx.lineTo(x1, y(ele[ele.length - 1])); ctx.lineTo(x1, y(R.lo)); ctx.closePath();
+    ctx.fillStyle = fg; ctx.fill();
+    ctx.beginPath();
+    for (let i = 0; i < ele.length; i += step2) i ? ctx.lineTo(x(off + dist[i]), y(ele[i])) : ctx.moveTo(x(off + dist[i]), y(ele[i]));
+    ctx.lineTo(x1, y(ele[ele.length - 1]));
+    ctx.strokeStyle = g; ctx.lineWidth = 2; ctx.stroke();
+  });
+  if (list.length > 1) {          // day dividers
+    ctx.strokeStyle = 'rgba(24,32,44,.22)'; ctx.lineWidth = 1;
+    segs.forEach(({ off }, i) => {
+      if (i) { ctx.beginPath(); ctx.moveTo(x(off), pad.t); ctx.lineTo(x(off), H - pad.b); ctx.stroke(); }
+    });
+  }
+
+  const ro = document.getElementById('readout');
+  const scrub = ev => {
+    const r = cv.getBoundingClientRect();
+    const frac = Math.min(1, Math.max(0, (ev.clientX - r.left - pad.l) / (W - pad.l - pad.r)));
+    const target = frac * total;
+    let si = segs.length - 1;
+    for (let k = 0; k < segs.length; k++) if (target <= segs[k].off + segs[k].d.stats.total) { si = k; break; }
+    const { d, off } = segs[si], dist = d.stats.dist;
+    const local = Math.min(d.stats.total, Math.max(0, target - off));
+    let lo = 0, hi = dist.length - 1;
+    while (lo < hi) { const mid = (lo + hi) >> 1; dist[mid] < local ? lo = mid + 1 : hi = mid; }
+    const c = d.coords[lo];
+    if (!scrubMarker) {
+      const el = document.createElement('div'); el.className = 'scrub';
+      scrubMarker = new mapboxgl.Marker({ element: el }).setLngLat(c.slice(0, 2)).addTo(map);
+    } else scrubMarker.setLngLat(c.slice(0, 2));
+    ro.textContent = (list.length > 1 ? d.label + ' · ' : '') + `${(dist[lo] * M2MI).toFixed(1)} mi · ${fmtFt(d.stats.ele[lo])}`;
+  };
+  cv.onpointerdown = e => { cv.setPointerCapture(e.pointerId); scrub(e); };
+  cv.onpointermove = e => { if (e.buttons || e.pointerType === 'touch') scrub(e); };
+}
+
+const redraw = () => { if (days.length && document.getElementById('prof'))
+  drawProfile(selected === 'all' ? days : [days[selected]]); };
+window.addEventListener('resize', redraw);
+
+/* ---------- Resizable side panel ---------- */
+(function () {
+  const handle = document.getElementById('resizer');
+  let dragging = false, raf = 0;
+  try {
+    const w = localStorage.getItem('sidew'), h = localStorage.getItem('sideh');
+    if (w) root.style.setProperty('--sidew', w);
+    if (h) root.style.setProperty('--sideh', h);
+  } catch (e) {}
+  handle.addEventListener('pointerdown', e => { dragging = true; handle.setPointerCapture(e.pointerId); e.preventDefault(); });
+  handle.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    if (window.innerWidth <= 760) {
+      const h = Math.min(innerHeight * 0.85, Math.max(180, innerHeight - e.clientY - 8));
+      root.style.setProperty('--sideh', Math.round(h) + 'px');
+    } else {
+      const w = Math.min(innerWidth * 0.7, Math.max(360, e.clientX - 12));
+      root.style.setProperty('--sidew', Math.round(w) + 'px');
+    }
+    cancelAnimationFrame(raf); raf = requestAnimationFrame(redraw);
+  });
+  const end = () => {
+    if (!dragging) return; dragging = false;
+    try {
+      localStorage.setItem('sidew', root.style.getPropertyValue('--sidew') || '');
+      localStorage.setItem('sideh', root.style.getPropertyValue('--sideh') || '');
+    } catch (e) {}
+  };
+  handle.addEventListener('pointerup', end);
+  handle.addEventListener('pointercancel', end);
+})();
+
+/* ---------- Start ---------- */
+(async function () {
+  if (MAPBOX_TOKEN.startsWith('PASTE')) {
+    const el = document.getElementById('err');
+    el.style.display = 'block';
+    el.textContent = 'Add your Mapbox public token at the top of the script (MAPBOX_TOKEN).';
+    return;
+  }
+  await loadDays();
+  if (!days.length) return;
+  buildDayBar();
+  initMap();
+})();
+</script>
+</body>
+</html>
